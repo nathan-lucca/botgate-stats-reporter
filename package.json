@@ -1,0 +1,62 @@
+{
+  "name": "@botgate/stats-reporter",
+  "version": "1.0.0",
+  "description": "Módulo oficial do BotGate para reportar estatísticas do seu bot Discord automaticamente",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "botgate",
+    "stats",
+    "statistics",
+    "discord.js",
+    "monitoring"
+  ],
+  "author": "BotGate Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/botgate/stats-reporter"
+  },
+  "bugs": {
+    "url": "https://github.com/botgate/stats-reporter/issues"
+  },
+  "homepage": "https://botgate.com",
+  "peerDependencies": {
+    "discord.js": "^14.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "jest": "^29.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}
