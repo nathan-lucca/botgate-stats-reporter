@@ -91,11 +91,7 @@ interface BotGateConfig {
   apiKey: string; // API key do BotGate
 
   // Opcional
-  apiUrl?: string; // URL da API (padrão: https://api.botgate.com)
-  updateInterval?: number; // Intervalo em ms (padrão: 30 minutos)
   debug?: boolean; // Ativar logs (padrão: false)
-  retryAttempts?: number; // Tentativas em caso de falha (padrão: 3)
-  retryDelay?: number; // Delay entre tentativas em ms (padrão: 5000)
 }
 ```
 
@@ -548,16 +544,16 @@ O BotGate oferece 3 tiers com diferentes limites e recursos:
 
 ### 🆓 Free Tier
 
-- ✅ **1,000 chamadas/mês**
-- ⏰ Atualização a cada **30 minutos**
+- ✅ **1,500 chamadas de API/mês**
+- ⏰ **Intervalo mínimo de atualização: 30 minutos**
 - 📊 Analytics **básicas**
 - 📅 Histórico de **7 dias**
 - 🎯 Perfeito para começar!
 
 ### ⭐ Premium Tier ($9.99/mês)
 
-- ✅ **10,000 chamadas/mês** (10x mais)
-- ⏰ Atualização a cada **5 minutos** (6x mais rápido)
+- ✅ **10,000 chamadas de API/mês** (6.6x mais)
+- ⏰ **Intervalo mínimo de atualização: 5 minutos** (6x mais rápido)
 - 📊 Analytics **avançadas**
 - 📅 Histórico de **90 dias**
 - 🎨 Badge **Premium**
@@ -566,8 +562,8 @@ O BotGate oferece 3 tiers com diferentes limites e recursos:
 
 ### 🚀 Business Tier ($29.99/mês)
 
-- ✅ **100,000 chamadas/mês** (100x mais)
-- ⏰ Atualização a cada **1 minuto** (30x mais rápido)
+- ✅ **100,000 chamadas de API/mês** (66x mais)
+- ⏰ **Intervalo mínimo de atualização: 1 minuto** (30x mais rápido)
 - 📊 Analytics **enterprise**
 - 📅 Histórico de **365 dias**
 - 👑 Badge **Verified**
@@ -576,24 +572,26 @@ O BotGate oferece 3 tiers com diferentes limites e recursos:
 - 🔔 Webhooks customizados
 - 💬 Suporte prioritário 24/7
 
+> **💡 Nota:** O reporter envia atualizações a cada 30 minutos automaticamente. A API controla o intervalo mínimo permitido baseado no seu tier. Se você tentar atualizar antes do intervalo permitido, a API retornará um erro 429 (Too Many Requests).
+
 ### 📊 Comparação de Limites
 
-| Recurso             | Free       | Premium     | Business   |
-| ------------------- | ---------- | ----------- | ---------- |
-| Chamadas/mês        | 1,000      | 10,000      | 100,000    |
-| Intervalo de update | 30 min     | 5 min       | 1 min      |
-| Analytics           | Básicas    | Avançadas   | Enterprise |
-| Histórico           | 7 dias     | 90 dias     | 365 dias   |
-| Webhooks            | ❌         | ✅          | ✅         |
-| Domínio custom      | ❌         | ❌          | ✅         |
-| Badge               | Nenhum     | Premium     | Verified   |
-| Suporte             | Comunidade | Prioritário | 24/7       |
+| Recurso          | Free       | Premium     | Business   |
+| ---------------- | ---------- | ----------- | ---------- |
+| Chamadas API/mês | 1,500      | 10,000      | 100,000    |
+| Intervalo mínimo | 30 min     | 5 min       | 1 min      |
+| Analytics        | Básicas    | Avançadas   | Enterprise |
+| Histórico        | 7 dias     | 90 dias     | 365 dias   |
+| Webhooks         | ❌         | ✅          | ✅         |
+| Domínio custom   | ❌         | ❌          | ✅         |
+| Badge            | Nenhum     | Premium     | Verified   |
+| Suporte          | Comunidade | Prioritário | 24/7       |
 
 ## 🔒 Rate Limiting
 
 A API implementa rate limiting baseado no tier:
 
-- **Free**: 1,000 chamadas/mês, reset no dia 1º de cada mês
+- **Free**: 1,500 chamadas/mês, reset no dia 1º de cada mês
 - **Premium**: 10,000 chamadas/mês
 - **Business**: 100,000 chamadas/mês
 
@@ -603,9 +601,9 @@ Quando o limite é atingido, a API retorna:
 {
   "success": false,
   "error": "API limit exceeded",
-  "message": "You have reached your monthly limit of 1000 API calls",
-  "currentUsage": 1000,
-  "limit": 1000,
+  "message": "You have reached your monthly limit of 1500 API calls",
+  "currentUsage": 1500,
+  "limit": 1500,
   "resetIn": "13 days",
   "resetAt": "2026-02-01T00:00:00.000Z",
   "upgrade": {
@@ -640,45 +638,20 @@ Contribuições são bem-vindas! Por favor:
 4. Push para a branch (`git push origin feature/MinhaFeature`)
 5. Abra um Pull Request
 
-## 📄 Licença
-
-MIT License
-
-Copyright (c) 2026 BotGate
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
 ## 🔗 Links
 
-- [Website do BotGate](https://botgate.com)
-- [Documentação Completa](https://docs.botgate.com)
-- [Discord de Suporte](https://discord.gg/botgate)
-- [GitHub](https://github.com/botgate/stats-reporter)
+- [Website do BotGate](https://www.botgate.coden8n.shop/)
+- [Discord de Suporte](https://discord.gg/xK4r9HqKKf)
+- [GitHub](https://github.com/nathan-lucca/botgate-stats-reporter)
 - [NPM](https://www.npmjs.com/package/@botgate/stats-reporter)
 
 ## 💬 Suporte
 
 Precisa de ajuda? Entre em contato:
 
-- 📧 Email: support@botgate.com
-- 💬 Discord: [Servidor de Suporte](https://discord.gg/botgate)
-- 🐛 Issues: [GitHub Issues](https://github.com/botgate/stats-reporter/issues)
+- 💬 Discord: [Servidor de Suporte](https://discord.gg/xK4r9HqKKf)
+- 🌐 Website: [BotGate](https://www.botgate.coden8n.shop/)
+- 🐛 Issues: [GitHub Issues](https://github.com/nathan-lucca/botgate-stats-reporter/issues)
 
 ## 🙏 Agradecimentos
 

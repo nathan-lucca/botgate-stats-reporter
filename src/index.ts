@@ -34,20 +34,22 @@ export interface BotGateConfig {
   /** API key do bot no BotGate (obrigatório) */
   apiKey: string;
 
-  /** URL da API do BotGate (opcional, padrão: https://api.botgate.com) */
-  apiUrl?: string;
-
-  /** Intervalo de atualização em milissegundos (opcional, padrão: 30 minutos) */
-  updateInterval?: number;
-
   /** Ativar logs detalhados (opcional, padrão: false) */
   debug?: boolean;
+}
 
-  /** Número de tentativas em caso de falha (opcional, padrão: 3) */
-  retryAttempts?: number;
-
-  /** Delay entre tentativas em ms (opcional, padrão: 5000) */
-  retryDelay?: number;
+/**
+ * Configuração interna completa (inclui valores fixos)
+ * @private
+ */
+interface InternalConfig {
+  botId: string;
+  apiKey: string;
+  apiUrl: string;
+  updateInterval: number;
+  debug: boolean;
+  retryAttempts: number;
+  retryDelay: number;
 }
 
 /**
@@ -129,7 +131,6 @@ export interface BotInfo {
  * const reporter = new BotGateReporter({
  *     botId: '123456789012345678',
  *     apiKey: 'your-api-key-here',
- *     updateInterval: 30 * 60 * 1000, // 30 minutos
  *     debug: true
  * });
  *
@@ -142,7 +143,7 @@ export interface BotInfo {
  */
 export class BotGateReporter {
   private client: Client | null = null;
-  private config: Required<BotGateConfig>;
+  private config: InternalConfig;
   private axios: AxiosInstance;
   private intervalId: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
@@ -167,11 +168,11 @@ export class BotGateReporter {
     this.config = {
       botId: config.botId,
       apiKey: config.apiKey,
-      apiUrl: config.apiUrl || "https://api.botgate.com",
-      updateInterval: config.updateInterval || 30 * 60 * 1000, // 30 minutos
+      apiUrl: "https://api.botgate.com",
+      updateInterval: 30 * 60 * 1000, // 30 minutos (a API controla o intervalo real)
       debug: config.debug || false,
-      retryAttempts: config.retryAttempts || 3,
-      retryDelay: config.retryDelay || 5000,
+      retryAttempts: 3,
+      retryDelay: 5000,
     };
 
     // Configurar cliente HTTP
@@ -187,8 +188,6 @@ export class BotGateReporter {
 
     this.log("✅ BotGate Reporter initialized", {
       botId: this.config.botId,
-      apiUrl: this.config.apiUrl,
-      updateInterval: `${this.config.updateInterval / 1000 / 60} minutes`,
     });
   }
 
@@ -496,7 +495,11 @@ export class BotGateReporter {
    * @returns Configuração atual do reporter
    */
   public getConfig(): Readonly<Required<BotGateConfig>> {
-    return { ...this.config };
+    return {
+      botId: this.config.botId,
+      apiKey: this.config.apiKey,
+      debug: this.config.debug,
+    };
   }
 
   /**

@@ -31,12 +31,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/botgate/stats-reporter"
+    "url": "https://github.com/nathan-lucca/botgate-stats-reporter"
   },
   "bugs": {
-    "url": "https://github.com/botgate/stats-reporter/issues"
+    "url": "https://github.com/nathan-lucca/botgate-stats-reporter/issues"
   },
-  "homepage": "https://botgate.com",
+  "homepage": "https://www.botgate.coden8n.shop/",
   "peerDependencies": {
     "discord.js": "^14.0.0"
   },
