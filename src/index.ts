@@ -164,12 +164,12 @@ export class BotGateReporter {
       throw new Error("[BotGate Reporter] apiKey is required");
     }
 
-    // Aplicar configuração padrão
+    // Aplicar configuração padrão (intervalo será atualizado após verificar tier)
     this.config = {
       botId: config.botId,
       apiKey: config.apiKey,
       apiUrl: "https://api.botgate.com",
-      updateInterval: 30 * 60 * 1000, // 30 minutos (a API controla o intervalo real)
+      updateInterval: 30 * 60 * 1000, // Padrão: 30 minutos (será atualizado)
       debug: config.debug || false,
       retryAttempts: 3,
       retryDelay: 5000,
@@ -286,10 +286,49 @@ export class BotGateReporter {
     try {
       const response = await this.axios.get("/api/v1/verify");
       this.log("✅ API key verified", response.data);
+
+      // Atualizar intervalo baseado no tier
+      if (response.data.success && response.data.data?.tier) {
+        this.updateIntervalFromTier(response.data.data.tier);
+      }
+
       return response.data.success === true;
     } catch (error) {
       this.log("❌ API key verification failed", this.formatError(error));
       return false;
+    }
+  }
+
+  /**
+   * Atualiza o intervalo de atualização baseado nas informações do tier
+   * @private
+   */
+  private updateIntervalFromTier(tierData: any): void {
+    const updateIntervalMinutes = tierData.updateInterval
+      ? parseInt(tierData.updateInterval.replace(" minutes", ""))
+      : 30;
+
+    const newInterval = updateIntervalMinutes * 60 * 1000;
+
+    if (newInterval !== this.config.updateInterval) {
+      const oldMinutes = this.config.updateInterval / 1000 / 60;
+      this.config.updateInterval = newInterval;
+
+      this.log(
+        `🔄 Update interval changed: ${oldMinutes} min → ${updateIntervalMinutes} min`,
+        {
+          tier: tierData.name,
+          oldInterval: `${oldMinutes} minutes`,
+          newInterval: `${updateIntervalMinutes} minutes`,
+        },
+      );
+
+      // Se já estiver rodando, reiniciar o intervalo
+      if (this.isRunning && this.intervalId) {
+        this.log("🔄 Restarting auto-update with new interval...");
+        clearInterval(this.intervalId);
+        this.setupAutoUpdate();
+      }
     }
   }
 
@@ -324,27 +363,10 @@ export class BotGateReporter {
   }
 
   /**
-   * Callback executado quando o bot está pronto
+   * Configura o auto-update com o intervalo atual
    * @private
    */
-  private onReady(): void {
-    this.log(`🤖 Bot ready: ${this.client?.user?.tag}`);
-
-    // Enviar stats imediatamente
-    this.sendStats()
-      .then((response) => {
-        if (response.success) {
-          this.log("✅ Initial stats sent successfully");
-          this.failedAttempts = 0;
-        } else {
-          this.log("⚠️ Failed to send initial stats", response);
-        }
-      })
-      .catch((error) => {
-        this.log("❌ Error sending initial stats", this.formatError(error));
-      });
-
-    // Configurar intervalo de atualização automática
+  private setupAutoUpdate(): void {
     this.intervalId = setInterval(() => {
       this.sendStats()
         .then((response) => {
@@ -363,6 +385,35 @@ export class BotGateReporter {
     this.log(
       `⏰ Auto-update enabled (every ${this.config.updateInterval / 1000 / 60} minutes)`,
     );
+  }
+
+  /**
+   * Callback executado quando o bot está pronto
+   * @private
+   */
+  private async onReady(): Promise<void> {
+    this.log(`🤖 Bot ready: ${this.client?.user?.tag}`);
+
+    // 1. Verificar API key e atualizar intervalo baseado no tier
+    this.log("🔍 Checking tier and update interval...");
+    await this.verifyApiKey();
+
+    // 2. Enviar stats imediatamente
+    this.sendStats()
+      .then((response) => {
+        if (response.success) {
+          this.log("✅ Initial stats sent successfully");
+          this.failedAttempts = 0;
+        } else {
+          this.log("⚠️ Failed to send initial stats", response);
+        }
+      })
+      .catch((error) => {
+        this.log("❌ Error sending initial stats", this.formatError(error));
+      });
+
+    // 3. Configurar intervalo de atualização automática (com intervalo do tier)
+    this.setupAutoUpdate();
   }
 
   /**
@@ -518,6 +569,34 @@ export class BotGateReporter {
    */
   public getFailedAttempts(): number {
     return this.failedAttempts;
+  }
+
+  /**
+   * Atualiza o tier e intervalo de atualização consultando a API
+   *
+   * Use este método após fazer upgrade do tier para aplicar o novo
+   * intervalo de atualização sem precisar reiniciar o bot.
+   *
+   * @returns Promise<boolean> - true se conseguiu atualizar
+   *
+   * @example
+   * ```typescript
+   * // Após fazer upgrade para Premium
+   * await reporter.refreshTier();
+   * // O intervalo será automaticamente ajustado de 30min para 5min
+   * ```
+   */
+  public async refreshTier(): Promise<boolean> {
+    this.log("🔄 Refreshing tier information...");
+    const success = await this.verifyApiKey();
+
+    if (success) {
+      this.log("✅ Tier refreshed successfully");
+    } else {
+      this.log("❌ Failed to refresh tier");
+    }
+
+    return success;
   }
 }
 

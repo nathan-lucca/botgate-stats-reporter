@@ -44,7 +44,7 @@ const client = new Client({
 const reporter = new BotGateReporter({
   botId: "YOUR_BOT_ID",
   apiKey: "YOUR_API_KEY",
-  debug: true, // Ativar logs (opcional)
+  debug: true, // Opcional
 });
 
 client.once("ready", () => {
@@ -68,8 +68,7 @@ const client = new Client({
 const reporter = new BotGateReporter({
   botId: "YOUR_BOT_ID",
   apiKey: "YOUR_API_KEY",
-  updateInterval: 30 * 60 * 1000, // 30 minutos
-  debug: true,
+  debug: true, // Opcional
 });
 
 client.once("ready", () => {
@@ -176,6 +175,20 @@ const failures = reporter.getFailedAttempts();
 console.log("Falhas consecutivas:", failures);
 ```
 
+#### `refreshTier(): Promise<boolean>`
+
+Atualiza o tier e intervalo de atualização consultando a API.
+
+**Use este método após fazer upgrade do tier** para aplicar o novo intervalo sem reiniciar o bot.
+
+```javascript
+// Após fazer upgrade para Premium no site
+await reporter.refreshTier();
+// O intervalo será automaticamente ajustado (ex: 30min → 5min)
+```
+
+> **💡 Dica**: Quando você faz upgrade do tier (Free → Premium → Business), chame `refreshTier()` para que o reporter comece a enviar stats com o novo intervalo imediatamente!
+
 ## 🔑 Obtendo sua API Key
 
 1. Acesse [BotGate](https://botgate.com)
@@ -202,8 +215,8 @@ O reporter tenta enviar as estatísticas até 3 vezes (configurável) em caso de
 const reporter = new BotGateReporter({
   botId: "YOUR_BOT_ID",
   apiKey: "YOUR_API_KEY",
-  retryAttempts: 5, // Tentar 5 vezes
-  retryDelay: 10000, // Aguardar 10s entre tentativas
+  retryAttempts: 3, // Tentar 3 vezes
+  retryDelay: 5000, // Aguardar 5s entre tentativas
 });
 ```
 
@@ -267,6 +280,28 @@ client.on("guildDelete", async (guild) => {
 
   // Enviar stats imediatamente
   await reporter.sendStats();
+});
+```
+
+### Atualizar Tier Após Upgrade
+
+```javascript
+// Comando para atualizar o tier após fazer upgrade no site
+client.on("messageCreate", async (message) => {
+  if (
+    message.content === "!refresh-tier" &&
+    message.author.id === "SEU_USER_ID"
+  ) {
+    message.reply("🔄 Atualizando tier...");
+
+    const success = await reporter.refreshTier();
+
+    if (success) {
+      message.reply("✅ Tier atualizado! Novo intervalo aplicado.");
+    } else {
+      message.reply("❌ Erro ao atualizar tier.");
+    }
+  }
 });
 ```
 
@@ -572,7 +607,18 @@ O BotGate oferece 3 tiers com diferentes limites e recursos:
 - 🔔 Webhooks customizados
 - 💬 Suporte prioritário 24/7
 
-> **💡 Nota:** O reporter envia atualizações a cada 30 minutos automaticamente. A API controla o intervalo mínimo permitido baseado no seu tier. Se você tentar atualizar antes do intervalo permitido, a API retornará um erro 429 (Too Many Requests).
+> **💡 Ajuste Automático de Intervalo:**
+>
+> O reporter **detecta automaticamente** o seu tier ao iniciar e ajusta o intervalo de atualização:
+>
+> - 🆓 **Free**: Envia stats a cada **30 minutos**
+> - ⭐ **Premium**: Envia stats a cada **5 minutos** (6x mais rápido!)
+> - 🚀 **Business**: Envia stats a cada **1 minuto** (30x mais rápido!)
+>
+> **Após fazer upgrade**, você tem 2 opções:
+>
+> 1. **Reiniciar o bot** - O novo intervalo será aplicado automaticamente
+> 2. **Chamar `reporter.refreshTier()`** - Atualiza sem reiniciar (recomendado!)
 
 ### 📊 Comparação de Limites
 
