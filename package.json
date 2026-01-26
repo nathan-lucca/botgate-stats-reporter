@@ -32,7 +32,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nathan-lucca/botgate-stats-reporter"
+    "url": "git+https://github.com/nathan-lucca/botgate-stats-reporter.git"
   },
   "bugs": {
     "url": "https://github.com/nathan-lucca/botgate-stats-reporter/issues"
