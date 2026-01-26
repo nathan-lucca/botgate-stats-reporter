@@ -1,5 +1,5 @@
 {
-  "name": "@botgate/stats-reporter",
+  "name": "@botgate/botgate-stats-reporter",
   "version": "1.0.0",
   "description": "Módulo oficial do BotGate para reportar estatísticas do seu bot Discord automaticamente",
   "main": "dist/index.js",
@@ -37,7 +37,7 @@
   "bugs": {
     "url": "https://github.com/nathan-lucca/botgate-stats-reporter/issues"
   },
-  "homepage": "https://www.botgate.coden8n.shop/",
+  "homepage": "http://docs-botgate.vercel.app/",
   "peerDependencies": {
     "discord.js": "^14.0.0"
   },
