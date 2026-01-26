@@ -1,6 +1,6 @@
 {
   "name": "@botgate/botgate-stats-reporter",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Módulo oficial do BotGate para reportar estatísticas do seu bot Discord automaticamente",
   "main": "dist/index.js",
   "module": "dist/index.js",
