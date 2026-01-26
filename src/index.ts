@@ -9,16 +9,8 @@ import axios, { AxiosInstance, AxiosError } from "axios";
  * Pacote oficial do BotGate para reportar estatísticas do seu bot Discord
  * automaticamente para a plataforma BotGate.
  *
- * Funcionalidades:
- * - Envio automático de estatísticas (servidores, usuários, shards)
- * - Intervalo configurável de atualização
- * - Verificação de API key
- * - Retry automático em caso de falha
- * - Logs detalhados (modo debug)
- * - TypeScript completo
- *
  * @package @botgate/stats-reporter
- * @version 1.0.0
+ * @version 1.1.0
  * @author BotGate Team
  * @license MIT
  * ============================================================================
@@ -39,7 +31,7 @@ export interface BotGateConfig {
 }
 
 /**
- * Configuração interna completa (inclui valores fixos)
+ * Configuração interna completa
  * @private
  */
 interface InternalConfig {
@@ -56,163 +48,80 @@ interface InternalConfig {
  * Estatísticas do bot
  */
 export interface BotStats {
-  /** ID do bot */
   botId: string;
-
-  /** Número de servidores */
   serverCount: number;
-
-  /** Número total de usuários */
   userCount: number;
-
-  /** Número de shards */
   shardCount: number;
-
-  /** Timestamp do envio */
   timestamp: number;
 }
 
 /**
- * Resposta da API do BotGate
+ * Resposta padrão da API do BotGate
  */
-export interface BotGateResponse {
-  /** Indica se a operação foi bem-sucedida */
+export interface BotGateResponse<T = any> {
   success: boolean;
-
-  /** Mensagem de retorno */
   message?: string;
-
-  /** Dados adicionais */
-  data?: any;
-
-  /** Erro (se houver) */
+  data?: T;
   error?: string;
 }
 
 /**
- * Informações do bot no BotGate
- */
-export interface BotInfo {
-  id: string;
-  name: string;
-  avatar: string | null;
-  discriminator: string;
-  shortDescription: string;
-  tagline: string | null;
-  prefix: string;
-  verified: boolean;
-  premium: boolean;
-  certified: boolean;
-  status: "pending" | "approved" | "rejected" | "banned";
-  stats: {
-    servers: number;
-    users: number;
-    shards: number;
-    votes: number;
-    monthlyVotes: number;
-    rating: number;
-    reviews: number;
-    lastUpdated: Date | null;
-  };
-  createdAt: Date;
-  approvedAt: Date | null;
-}
-
-/**
  * Classe principal do BotGate Reporter
- *
- * @example
- * ```typescript
- * import { Client } from 'discord.js';
- * import { BotGateReporter } from '@botgate/stats-reporter';
- *
- * const client = new Client({ intents: [...] });
- *
- * const reporter = new BotGateReporter({
- *     botId: '123456789012345678',
- *     apiKey: 'your-api-key-here',
- *     debug: true
- * });
- *
- * client.once('ready', () => {
- *     reporter.start(client);
- * });
- *
- * client.login('your-bot-token');
- * ```
  */
 export class BotGateReporter {
   private client: Client | null = null;
   private config: InternalConfig;
   private axios: AxiosInstance;
-  private intervalId: NodeJS.Timeout | null = null;
+  private statsIntervalId: NodeJS.Timeout | null = null;
+  private heartbeatIntervalId: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private failedAttempts: number = 0;
+  private currentTier: string = "free";
 
   /**
    * Cria uma nova instância do BotGate Reporter
    *
    * @param config - Configuração do reporter
-   * @throws {Error} Se botId ou apiKey não forem fornecidos
    */
   constructor(config: BotGateConfig) {
-    // Validar configuração obrigatória
-    if (!config.botId) {
-      throw new Error("[BotGate Reporter] botId is required");
-    }
-    if (!config.apiKey) {
+    if (!config.botId) throw new Error("[BotGate Reporter] botId is required");
+    if (!config.apiKey)
       throw new Error("[BotGate Reporter] apiKey is required");
-    }
 
-    // Aplicar configuração padrão (intervalo será atualizado após verificar tier)
     this.config = {
       botId: config.botId,
       apiKey: config.apiKey,
-      apiUrl: "https://api.botgate.com",
-      updateInterval: 30 * 60 * 1000, // Padrão: 30 minutos (será atualizado)
+      apiUrl: "https://botgate-api-987684559046.us-central1.run.app",
+      updateInterval: 30 * 60 * 1000, // Padrão: 30 minutos (será atualizado via tier)
       debug: config.debug || false,
       retryAttempts: 3,
       retryDelay: 5000,
     };
 
-    // Configurar cliente HTTP
     this.axios = axios.create({
       baseURL: this.config.apiUrl,
       timeout: 10000,
       headers: {
         Authorization: `Bearer ${this.config.apiKey}`,
         "Content-Type": "application/json",
-        "User-Agent": `BotGate-Stats-Reporter/1.0.0 (Bot: ${this.config.botId})`,
+        "User-Agent": `BotGate-Stats-Reporter/1.1.0 (Bot: ${this.config.botId})`,
       },
     });
 
-    this.log("✅ BotGate Reporter initialized", {
-      botId: this.config.botId,
-    });
+    this.log("✅ BotGate Reporter initialized", { botId: this.config.botId });
   }
 
   /**
-   * Inicia o reporter com um client do Discord.js
+   * Inicia o reporter e o monitoramento automático
    *
    * @param client - Instância do Discord.js Client
-   *
-   * @example
-   * ```typescript
-   * client.once('ready', () => {
-   *     reporter.start(client);
-   * });
-   * ```
    */
   public start(client: Client): void {
-    if (this.isRunning) {
-      this.log("⚠️ Reporter already running");
-      return;
-    }
+    if (this.isRunning) return;
 
     this.client = client;
     this.isRunning = true;
 
-    // Aguardar o bot estar pronto
     if (client.isReady()) {
       this.onReady();
     } else {
@@ -223,402 +132,287 @@ export class BotGateReporter {
   }
 
   /**
-   * Para o reporter e cancela atualizações automáticas
-   *
-   * @example
-   * ```typescript
-   * process.on('SIGINT', () => {
-   *     reporter.stop();
-   *     process.exit(0);
-   * });
-   * ```
+   * Para o reporter e cancela todos os agendamentos
    */
   public stop(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
+    if (this.statsIntervalId) clearInterval(this.statsIntervalId);
+    if (this.heartbeatIntervalId) clearInterval(this.heartbeatIntervalId);
+
+    this.statsIntervalId = null;
+    this.heartbeatIntervalId = null;
     this.isRunning = false;
+
     this.log("🛑 Reporter stopped");
   }
 
   /**
-   * Envia estatísticas manualmente (sem aguardar o intervalo)
-   *
-   * @returns Promise com a resposta da API
-   * @throws {Error} Se o client não estiver pronto
-   *
-   * @example
-   * ```typescript
-   * try {
-   *     const response = await reporter.sendStats();
-   *     console.log('Stats enviadas:', response);
-   * } catch (error) {
-   *     console.error('Erro ao enviar stats:', error);
-   * }
-   * ```
+   * Envia estatísticas de servidores e usuários
    */
   public async sendStats(): Promise<BotGateResponse> {
-    if (!this.client || !this.client.isReady()) {
+    if (!this.client?.isReady()) {
       throw new Error("[BotGate Reporter] Discord client is not ready");
     }
 
     const stats = this.collectStats();
-    return await this.postStatsWithRetry(stats);
+
+    return await this.postWithRetry("/api/v1/bots/stats", stats);
   }
 
   /**
-   * Verifica se a API key é válida
-   *
-   * @returns Promise<boolean> - true se a API key for válida
-   *
-   * @example
-   * ```typescript
-   * const isValid = await reporter.verifyApiKey();
-   * if (isValid) {
-   *     console.log('API key válida!');
-   * } else {
-   *     console.error('API key inválida!');
-   * }
-   * ```
+   * Envia sinal de vida (Heartbeat) - Apenas Business
+   */
+  public async sendHeartbeat(): Promise<BotGateResponse> {
+    return await this.postWithRetry("/api/v1/heartbeat", {});
+  }
+
+  /**
+   * Verifica se a API key é válida e atualiza configurações de tier
    */
   public async verifyApiKey(): Promise<boolean> {
     try {
       const response = await this.axios.get("/api/v1/verify");
-      this.log("✅ API key verified", response.data);
 
-      // Atualizar intervalo baseado no tier
       if (response.data.success && response.data.data?.tier) {
-        this.updateIntervalFromTier(response.data.data.tier);
+        this.syncFromResponse(response.data.data);
       }
 
       return response.data.success === true;
     } catch (error) {
       this.log("❌ API key verification failed", this.formatError(error));
+
       return false;
     }
   }
 
   /**
-   * Atualiza o intervalo de atualização baseado nas informações do tier
-   * @private
+   * Busca informações completas do bot
    */
+  public async getBotInfo(
+    botId: string = this.config.botId,
+  ): Promise<BotGateResponse> {
+    const response = await this.axios.get(`/api/v1/bots/${botId}`);
+
+    if (response.data.success) {
+      this.syncFromResponse(response.data.data);
+    }
+
+    return response.data;
+  }
+
+  /**
+   * Busca detalhes de votos do bot
+   */
+  public async getBotVotes(
+    botId: string = this.config.botId,
+    limit: number = 10,
+  ): Promise<BotGateResponse> {
+    const response = await this.axios.get(`/api/v1/bots/${botId}/votes`, {
+      params: { limit },
+    });
+
+    return response.data;
+  }
+
+  /**
+   * Busca métricas e analytics (Requer plano compatível)
+   */
+  public async getBotAnalytics(
+    botId: string = this.config.botId,
+  ): Promise<BotGateResponse> {
+    const response = await this.axios.get(`/api/v1/bots/${botId}/analytics`);
+
+    return response.data;
+  }
+
+  /**
+   * Busca histórico de crescimento (Para gráficos)
+   */
+  public async getStatsHistory(
+    botId: string = this.config.botId,
+    period: "daily" | "weekly" | "monthly" | "all" = "all",
+  ): Promise<BotGateResponse> {
+    const response = await this.axios.get(
+      `/api/v1/bots/${botId}/stats/history`,
+      { params: { period } },
+    );
+
+    return response.data;
+  }
+
+  /**
+   * Busca informações de uso da API (limites e consumo)
+   */
+  public async getApiUsage(): Promise<BotGateResponse> {
+    const response = await this.axios.get("/api/v1/usage");
+
+    if (response.data.success) {
+      this.syncFromResponse(response.data.data);
+    }
+
+    return response.data;
+  }
+
+  /**
+   * Métodos Privados
+   */
+
+  private async onReady(): Promise<void> {
+    this.log(`🤖 Bot ready: ${this.client?.user?.tag}`);
+
+    // verifyApiKey e sendStats já chamam setupAutoUpdate internamente se necessário
+    await this.verifyApiKey();
+    await this.sendStats();
+  }
+
+  private setupAutoUpdate(): void {
+    if (this.statsIntervalId) clearInterval(this.statsIntervalId);
+
+    this.statsIntervalId = setInterval(
+      () => this.sendStats(),
+      this.config.updateInterval,
+    );
+
+    this.log(
+      `⏰ Auto-stats enabled (${this.config.updateInterval / 60000} min)`,
+    );
+  }
+
+  private manageHeartbeat(): void {
+    if (this.currentTier === "business") {
+      if (this.heartbeatIntervalId) return;
+
+      this.sendHeartbeat(); // Primeiro envio imediato
+
+      this.heartbeatIntervalId = setInterval(
+        () => this.sendHeartbeat(),
+        5 * 60 * 1000,
+      ); // A cada 5 min
+
+      this.log("💓 Business Heartbeat enabled (every 5 min)");
+    } else if (this.heartbeatIntervalId) {
+      clearInterval(this.heartbeatIntervalId);
+
+      this.heartbeatIntervalId = null;
+    }
+  }
+
+  private collectStats(): BotStats {
+    const guilds = this.client!.guilds.cache;
+
+    return {
+      botId: this.config.botId,
+      serverCount: guilds.size,
+      userCount: guilds.reduce((acc, g) => acc + (g.memberCount || 0), 0),
+      shardCount: this.client!.shard?.count || 1,
+      timestamp: Date.now(),
+    };
+  }
+
+  private async postWithRetry(
+    url: string,
+    data: any,
+    attempt: number = 1,
+  ): Promise<BotGateResponse> {
+    try {
+      const response = await this.axios.post(url, data);
+      const responseData = response.data;
+
+      // Sincronização inteligente: Se a resposta contiver dados do tier, atualiza localmente
+      if (responseData.success) {
+        this.syncFromResponse(responseData.data);
+      }
+
+      this.failedAttempts = 0;
+
+      return { success: true, data: responseData };
+    } catch (error: any) {
+      const status = error.response?.status;
+
+      // Se o erro for 403 (Upgrade/Tier) ou 429 (Frequência)
+      if (status === 403 || status === 429) {
+        this.log(
+          `⚠️ Tier/Frequency limit reached (${status}). Syncing and waiting for next cycle...`,
+        );
+        await this.verifyApiKey();
+
+        // NÃO tentar novamente (retry) agora, pois vai falhar de novo.
+        // Esperamos o próximo intervalo agendado.
+        return {
+          success: false,
+          error: `Rate limited or tier mismatch (${status})`,
+        };
+      }
+
+      if (attempt < this.config.retryAttempts) {
+        await new Promise((r) => setTimeout(r, this.config.retryDelay));
+        return this.postWithRetry(url, data, attempt + 1);
+      }
+
+      this.failedAttempts++;
+      return { success: false, error: error.message };
+    }
+  }
+
+  private syncFromResponse(data: any): void {
+    if (!data) return;
+
+    // Tenta extrair o tier e o intervalo de diferentes formatos de resposta da API
+    // Se for a resposta de /bots/stats, o tier vem dentro de data.tier
+    // Se for a resposta de /usage, o tier vem direto em data.tier.name
+    const tierObject = data.tier || data;
+    const tierName = tierObject.name || tierObject.tier || data.tier;
+
+    const intervalMinutes =
+      tierObject.updateIntervalMinutes ||
+      data.updates?.updateIntervalMinutes ||
+      data.capabilities?.updateIntervalMinutes;
+
+    if (tierName && tierName !== this.currentTier) {
+      this.log(`🔄 Plan change detected: ${this.currentTier} -> ${tierName}`);
+      this.currentTier = tierName;
+
+      if (intervalMinutes) {
+        this.updateIntervalFromTier({
+          updateInterval: `${intervalMinutes} minutes`,
+        });
+      }
+
+      this.manageHeartbeat();
+    }
+  }
+
   private updateIntervalFromTier(tierData: any): void {
-    const updateIntervalMinutes = tierData.updateInterval
-      ? parseInt(tierData.updateInterval.replace(" minutes", ""))
-      : 30;
+    const minutes = parseInt(
+      tierData.updateInterval?.replace(" minutes", "") || "30",
+    );
+    const newInterval = minutes * 60 * 1000;
 
-    const newInterval = updateIntervalMinutes * 60 * 1000;
-
-    if (newInterval !== this.config.updateInterval) {
-      const oldMinutes = this.config.updateInterval / 1000 / 60;
+    if (this.config.updateInterval !== newInterval) {
       this.config.updateInterval = newInterval;
 
-      this.log(
-        `🔄 Update interval changed: ${oldMinutes} min → ${updateIntervalMinutes} min`,
-        {
-          tier: tierData.name,
-          oldInterval: `${oldMinutes} minutes`,
-          newInterval: `${updateIntervalMinutes} minutes`,
-        },
-      );
-
-      // Se já estiver rodando, reiniciar o intervalo
-      if (this.isRunning && this.intervalId) {
-        this.log("🔄 Restarting auto-update with new interval...");
-        clearInterval(this.intervalId);
+      // Se já estiver rodando, precisamos reiniciar o timer com o novo tempo
+      if (this.isRunning) {
         this.setupAutoUpdate();
       }
     }
   }
 
-  /**
-   * Obtém informações do bot no BotGate
-   *
-   * @returns Promise com as informações do bot
-   * @throws {Error} Se o bot não for encontrado ou houver erro na API
-   *
-   * @example
-   * ```typescript
-   * try {
-   *     const botInfo = await reporter.getBotInfo();
-   *     console.log('Bot:', botInfo.name);
-   *     console.log('Votos:', botInfo.stats.votes);
-   * } catch (error) {
-   *     console.error('Erro ao buscar info:', error);
-   * }
-   * ```
-   */
-  public async getBotInfo(): Promise<BotInfo> {
-    try {
-      const response = await this.axios.get(
-        `/api/v1/bots/${this.config.botId}`,
-      );
-      this.log("📊 Bot info retrieved", response.data.data);
-      return response.data.data;
-    } catch (error) {
-      this.log("❌ Failed to get bot info", this.formatError(error));
-      throw error;
-    }
-  }
-
-  /**
-   * Configura o auto-update com o intervalo atual
-   * @private
-   */
-  private setupAutoUpdate(): void {
-    this.intervalId = setInterval(() => {
-      this.sendStats()
-        .then((response) => {
-          if (response.success) {
-            this.log("✅ Stats updated successfully");
-            this.failedAttempts = 0;
-          } else {
-            this.log("⚠️ Failed to update stats", response);
-          }
-        })
-        .catch((error) => {
-          this.log("❌ Error updating stats", this.formatError(error));
-        });
-    }, this.config.updateInterval);
-
-    this.log(
-      `⏰ Auto-update enabled (every ${this.config.updateInterval / 1000 / 60} minutes)`,
-    );
-  }
-
-  /**
-   * Callback executado quando o bot está pronto
-   * @private
-   */
-  private async onReady(): Promise<void> {
-    this.log(`🤖 Bot ready: ${this.client?.user?.tag}`);
-
-    // 1. Verificar API key e atualizar intervalo baseado no tier
-    this.log("🔍 Checking tier and update interval...");
-    await this.verifyApiKey();
-
-    // 2. Enviar stats imediatamente
-    this.sendStats()
-      .then((response) => {
-        if (response.success) {
-          this.log("✅ Initial stats sent successfully");
-          this.failedAttempts = 0;
-        } else {
-          this.log("⚠️ Failed to send initial stats", response);
-        }
-      })
-      .catch((error) => {
-        this.log("❌ Error sending initial stats", this.formatError(error));
-      });
-
-    // 3. Configurar intervalo de atualização automática (com intervalo do tier)
-    this.setupAutoUpdate();
-  }
-
-  /**
-   * Coleta estatísticas atuais do bot
-   * @private
-   */
-  private collectStats(): BotStats {
-    if (!this.client || !this.client.isReady()) {
-      throw new Error("[BotGate Reporter] Discord client is not ready");
-    }
-
-    const guilds = this.client.guilds.cache;
-    const serverCount = guilds.size;
-
-    // Calcular total de usuários (soma de memberCount de todos os servidores)
-    const userCount = guilds.reduce((acc, guild) => {
-      return acc + guild.memberCount;
-    }, 0);
-
-    // Número de shards (1 se não estiver usando sharding)
-    const shardCount = this.client.shard ? this.client.shard.count : 1;
-
-    return {
-      botId: this.config.botId,
-      serverCount,
-      userCount,
-      shardCount,
-      timestamp: Date.now(),
-    };
-  }
-
-  /**
-   * Envia estatísticas para a API com retry automático
-   * @private
-   */
-  private async postStatsWithRetry(
-    stats: BotStats,
-    attempt: number = 1,
-  ): Promise<BotGateResponse> {
-    try {
-      const response = await this.axios.post("/api/v1/bots/stats", stats);
-
-      this.log(`📤 Stats sent successfully (attempt ${attempt})`, {
-        servers: stats.serverCount,
-        users: stats.userCount,
-        shards: stats.shardCount,
-      });
-
-      return {
-        success: true,
-        data: response.data,
-      };
-    } catch (error: any) {
-      const errorMessage = this.formatError(error);
-
-      // Se ainda temos tentativas restantes, tentar novamente
-      if (attempt < this.config.retryAttempts) {
-        this.log(
-          `⚠️ Failed to send stats (attempt ${attempt}/${this.config.retryAttempts}), retrying in ${this.config.retryDelay / 1000}s...`,
-          errorMessage,
-        );
-
-        // Aguardar antes de tentar novamente
-        await new Promise((resolve) =>
-          setTimeout(resolve, this.config.retryDelay),
-        );
-
-        return this.postStatsWithRetry(stats, attempt + 1);
-      }
-
-      // Todas as tentativas falharam
-      this.failedAttempts++;
-      this.log(
-        `❌ Failed to send stats after ${this.config.retryAttempts} attempts`,
-        errorMessage,
-      );
-
-      return {
-        success: false,
-        message: errorMessage.message,
-        error: errorMessage.error,
-      };
-    }
-  }
-
-  /**
-   * Formata erros do axios para exibição
-   * @private
-   */
-  private formatError(error: any): {
-    message: string;
-    error: string;
-    status?: number;
-  } {
-    if (axios.isAxiosError(error)) {
-      const axiosError = error as AxiosError<any>;
-      const responseData = axiosError.response?.data as any;
-
-      return {
-        message: responseData?.message || axiosError.message,
-        error: responseData?.error || axiosError.code || "Unknown error",
-        status: axiosError.response?.status,
-      };
-    }
-
-    return {
-      message: error?.message || "Unknown error",
-      error: error?.toString() || "Unknown error",
-    };
-  }
-
-  /**
-   * Logger interno com suporte a debug
-   * @private
-   */
   private log(message: string, data?: any): void {
-    if (!this.config.debug) return;
+    if (this.config.debug) {
+      console.log(
+        `[BotGate Reporter] [${new Date().toISOString()}] ${message}`,
+      );
 
-    const timestamp = new Date().toISOString();
-    console.log(`[BotGate Reporter] [${timestamp}] ${message}`);
-
-    if (data) {
-      console.log(JSON.stringify(data, null, 2));
+      if (data) console.log(JSON.stringify(data, null, 2));
     }
   }
 
-  /**
-   * Obtém a configuração atual (somente leitura)
-   *
-   * @returns Configuração atual do reporter
-   */
-  public getConfig(): Readonly<Required<BotGateConfig>> {
+  private formatError(error: any) {
     return {
-      botId: this.config.botId,
-      apiKey: this.config.apiKey,
-      debug: this.config.debug,
+      message: error.response?.data?.message || error.message,
+      status: error.response?.status,
     };
   }
-
-  /**
-   * Verifica se o reporter está ativo
-   *
-   * @returns true se o reporter estiver rodando
-   */
-  public isActive(): boolean {
-    return this.isRunning;
-  }
-
-  /**
-   * Obtém o número de tentativas falhadas consecutivas
-   *
-   * @returns Número de falhas consecutivas
-   */
-  public getFailedAttempts(): number {
-    return this.failedAttempts;
-  }
-
-  /**
-   * Atualiza o tier e intervalo de atualização consultando a API
-   *
-   * Use este método após fazer upgrade do tier para aplicar o novo
-   * intervalo de atualização sem precisar reiniciar o bot.
-   *
-   * @returns Promise<boolean> - true se conseguiu atualizar
-   *
-   * @example
-   * ```typescript
-   * // Após fazer upgrade para Premium
-   * await reporter.refreshTier();
-   * // O intervalo será automaticamente ajustado de 30min para 5min
-   * ```
-   */
-  public async refreshTier(): Promise<boolean> {
-    this.log("🔄 Refreshing tier information...");
-    const success = await this.verifyApiKey();
-
-    if (success) {
-      this.log("✅ Tier refreshed successfully");
-    } else {
-      this.log("❌ Failed to refresh tier");
-    }
-
-    return success;
-  }
 }
 
-/**
- * Factory function para criar uma instância do reporter
- *
- * @param config - Configuração do reporter
- * @returns Nova instância do BotGateReporter
- *
- * @example
- * ```typescript
- * const reporter = createReporter({
- *     botId: '123456789012345678',
- *     apiKey: 'your-api-key-here'
- * });
- * ```
- */
-export function createReporter(config: BotGateConfig): BotGateReporter {
-  return new BotGateReporter(config);
-}
-
-/**
- * Exportação padrão
- */
 export default BotGateReporter;
