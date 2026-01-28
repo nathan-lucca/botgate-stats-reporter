@@ -153,7 +153,7 @@ export class BotGateReporter {
       throw new Error("[BotGate Reporter] Discord client is not ready");
     }
 
-    const stats = this.collectStats();
+    const stats = await this.collectStats();
 
     return await this.postWithRetry("/api/v1/bots/stats", stats);
   }
@@ -259,9 +259,19 @@ export class BotGateReporter {
   private async onReady(): Promise<void> {
     this.log(`🤖 Bot ready: ${this.client?.user?.tag}`);
 
-    // verifyApiKey e sendStats já chamam setupAutoUpdate internamente se necessário
-    await this.verifyApiKey();
-    await this.sendStats();
+    // Apenas o Shard 0 (líder) ou bot sem shards inicia o loop de postagem
+    // Isso evita que cada shard envie requisições duplicadas para a API
+    const isLeader = !this.client?.shard || this.client.shard.ids[0] === 0;
+
+    if (isLeader) {
+      this.log("⭐ Shard Leader detected. Handling global reporting.");
+      await this.verifyApiKey();
+      await this.sendStats();
+    } else {
+      this.log(
+        `ℹ️ Shard #${this.client?.shard?.ids[0]} initialized. Skipping reporting (Leader task).`,
+      );
+    }
   }
 
   private setupAutoUpdate(): void {
@@ -296,14 +306,42 @@ export class BotGateReporter {
     }
   }
 
-  private collectStats(): BotStats {
-    const guilds = this.client!.guilds.cache;
+  private async collectStats(): Promise<BotStats> {
+    if (!this.client) throw new Error("Client not initialized");
+
+    // Caso NÃO tenha shards, faz a coleta local normal
+    if (!this.client.shard) {
+      const guilds = this.client.guilds.cache;
+
+      return {
+        botId: this.config.botId,
+        serverCount: guilds.size,
+        userCount: guilds.reduce((acc, g) => acc + (g.memberCount || 0), 0),
+        shardCount: 1,
+        timestamp: Date.now(),
+      };
+    }
+
+    // Caso TENHA shards, solicita que todos os shards enviem seus dados e soma
+    this.log("📡 Collecting stats from all shards via broadcastEval...");
+    const results = (await this.client.shard.broadcastEval((c: any) => {
+      return {
+        guilds: c.guilds.cache.size,
+        users: c.guilds.cache.reduce(
+          (acc: number, g: any) => acc + (g.memberCount || 0),
+          0,
+        ),
+      };
+    })) as Array<{ guilds: number; users: number }>;
+
+    const totalGuilds = results.reduce((acc, res) => acc + res.guilds, 0);
+    const totalUsers = results.reduce((acc, res) => acc + res.users, 0);
 
     return {
       botId: this.config.botId,
-      serverCount: guilds.size,
-      userCount: guilds.reduce((acc, g) => acc + (g.memberCount || 0), 0),
-      shardCount: this.client!.shard?.count || 1,
+      serverCount: totalGuilds,
+      userCount: totalUsers,
+      shardCount: this.client.shard.count,
       timestamp: Date.now(),
     };
   }
