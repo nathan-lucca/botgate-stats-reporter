@@ -180,28 +180,53 @@ export class BotGateReporter extends EventEmitter {
     try {
       this.log("🔍 Starting auto-configuration...");
 
-      // 1. Descobrir IP (Local seapiUrl for localhost, senão Público)
-      let targetHost = "localhost";
+      let webhookUrl = "";
+      let protocol = "http";
 
-      if (
-        !this.config.apiUrl?.includes("localhost") &&
-        !this.config.apiUrl?.includes("127.0.0.1")
+      // 1. DETECTAR AMBIENTE E CONSTRUIR URL APROPRIADA
+
+      // CASO A: Google Cloud Run
+      if (process.env.K_SERVICE) {
+        const service = process.env.K_SERVICE;
+        const project =
+          process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT;
+        const region =
+          process.env.GOOGLE_CLOUD_REGION ||
+          process.env.FUNCTION_REGION ||
+          "us-central1";
+
+        if (project) {
+          webhookUrl = `https://${service}-${project}.${region}.run.app/webhook`;
+          protocol = "https";
+          this.log(`☁️ Detected Google Cloud Run environment`);
+        } else {
+          throw new Error("Cloud Run detected but project ID not found");
+        }
+      }
+      // CASO B: Localhost (Desenvolvimento)
+      else if (
+        this.config.apiUrl?.includes("localhost") ||
+        this.config.apiUrl?.includes("127.0.0.1")
       ) {
+        webhookUrl = `http://localhost:${this.config.webhookPort}/webhook`;
+        this.log(`🏠 Detected localhost environment`);
+      }
+      // CASO C: Outros ambientes (Railway, Heroku, VPS)
+      else {
         const ipResponse = await axios.get("https://api.ipify.org?format=json");
-        targetHost = ipResponse.data.ip;
+        const publicIp = ipResponse.data.ip;
+        webhookUrl = `http://${publicIp}:${this.config.webhookPort}/webhook`;
+        this.log(`🌐 Detected public IP: ${publicIp}`);
       }
 
-      if (!targetHost) throw new Error("Could not determine target host");
-
-      // 2. Gerar Secret Aleatório (se não houver um)
-      const secret = Math.random().toString(36).substring(2, 15);
-
-      // 3. Montar URL
-      const webhookUrl = `http://${targetHost}:${this.config.webhookPort}/webhook`;
+      if (!webhookUrl) throw new Error("Could not determine webhook URL");
 
       this.log(`🌐 Auto-Config: Webhook URL set to ${webhookUrl}`);
 
-      // 4. Enviar para a API do BotGate
+      // 2. Gerar Secret Aleatório
+      const secret = Math.random().toString(36).substring(2, 15);
+
+      // 3. Enviar para a API do BotGate
       const response = await this.axios.post("/api/v1/settings/webhook", {
         url: webhookUrl,
         secret: secret,
