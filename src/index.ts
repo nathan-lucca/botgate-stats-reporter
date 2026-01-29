@@ -1,5 +1,7 @@
 import { Client } from "discord.js";
-import axios, { AxiosInstance, AxiosError } from "axios";
+import axios, { AxiosInstance } from "axios";
+import EventEmitter from "events";
+import { createServer, Server } from "http";
 
 /**
  * ============================================================================
@@ -28,6 +30,18 @@ export interface BotGateConfig {
 
   /** Ativar logs detalhados (opcional, padrão: false) */
   debug?: boolean;
+
+  /** Ativar servidor de webhooks interno (opcional, padrão: false) */
+  enableWebhooks?: boolean;
+
+  /** Porta para ouvir webhooks (opcional, padrão: 8080). Apenas usado se enableWebhooks for true. */
+  webhookPort?: number;
+
+  /** Tentar configurar o webhook automaticamente no site do BotGate (descobre IP e envia para a API) */
+  autoConfig?: boolean;
+
+  /** URL da API do BotGate (opcional, usado para testes) */
+  apiUrl?: string;
 }
 
 /**
@@ -42,6 +56,7 @@ interface InternalConfig {
   debug: boolean;
   retryAttempts: number;
   retryDelay: number;
+  webhookPort?: number;
 }
 
 /**
@@ -68,12 +83,13 @@ export interface BotGateResponse<T = any> {
 /**
  * Classe principal do BotGate Reporter
  */
-export class BotGateReporter {
+export class BotGateReporter extends EventEmitter {
   private client: Client | null = null;
   private config: InternalConfig;
   private axios: AxiosInstance;
   private statsIntervalId: NodeJS.Timeout | null = null;
   private heartbeatIntervalId: NodeJS.Timeout | null = null;
+  private webhookServer: Server | null = null;
   private isRunning: boolean = false;
   private failedAttempts: number = 0;
   private currentTier: string = "free";
@@ -84,6 +100,8 @@ export class BotGateReporter {
    * @param config - Configuração do reporter
    */
   constructor(config: BotGateConfig) {
+    super();
+
     if (!config.botId) throw new Error("[BotGate Reporter] botId is required");
     if (!config.apiKey)
       throw new Error("[BotGate Reporter] apiKey is required");
@@ -91,11 +109,13 @@ export class BotGateReporter {
     this.config = {
       botId: config.botId,
       apiKey: config.apiKey,
-      apiUrl: "https://botgate-api-987684559046.us-central1.run.app",
+      apiUrl:
+        config.apiUrl || "https://botgate-api-987684559046.us-central1.run.app",
       updateInterval: 30 * 60 * 1000, // Padrão: 30 minutos (será atualizado via tier)
       debug: config.debug || false,
       retryAttempts: 3,
       retryDelay: 5000,
+      webhookPort: config.webhookPort || 8080,
     };
 
     this.axios = axios.create({
@@ -104,11 +124,109 @@ export class BotGateReporter {
       headers: {
         Authorization: `Bearer ${this.config.apiKey}`,
         "Content-Type": "application/json",
-        "User-Agent": `BotGate-Stats-Reporter/1.1.0 (Bot: ${this.config.botId})`,
+        "User-Agent": `BotGate-Stats-Reporter/1.2.0 (Bot: ${this.config.botId})`,
       },
     });
 
+    if (config.enableWebhooks) {
+      this.initWebhookServer();
+    }
+
+    if (config.autoConfig) {
+      this.setupAutoWebhook();
+    }
+
     this.log("✅ BotGate Reporter initialized", { botId: this.config.botId });
+  }
+
+  /**
+   * Inicializa o servidor de webhooks interno
+   */
+  private initWebhookServer(): void {
+    if (this.webhookServer) return;
+
+    this.webhookServer = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/webhook") {
+        let body = "";
+        req.on("data", (chunk) => (body += chunk.toString()));
+        req.on("end", () => {
+          try {
+            const data = JSON.parse(body);
+            this.emit("vote", data.details || data);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: true }));
+          } catch (e) {
+            res.writeHead(400);
+            res.end();
+          }
+        });
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    this.webhookServer.listen(this.config.webhookPort, () => {
+      this.log(
+        `📡 Webhook server listening on port ${this.config.webhookPort}`,
+      );
+    });
+  }
+
+  /**
+   * Configura automaticamente o webhook no painel do BotGate
+   */
+  public async setupAutoWebhook(): Promise<void> {
+    try {
+      this.log("🔍 Starting auto-configuration...");
+
+      // 1. Descobrir IP (Local seapiUrl for localhost, senão Público)
+      let targetHost = "localhost";
+
+      if (
+        !this.config.apiUrl?.includes("localhost") &&
+        !this.config.apiUrl?.includes("127.0.0.1")
+      ) {
+        const ipResponse = await axios.get("https://api.ipify.org?format=json");
+        targetHost = ipResponse.data.ip;
+      }
+
+      if (!targetHost) throw new Error("Could not determine target host");
+
+      // 2. Gerar Secret Aleatório (se não houver um)
+      const secret = Math.random().toString(36).substring(2, 15);
+
+      // 3. Montar URL
+      const webhookUrl = `http://${targetHost}:${this.config.webhookPort}/webhook`;
+
+      this.log(`🌐 Auto-Config: Webhook URL set to ${webhookUrl}`);
+
+      // 4. Enviar para a API do BotGate
+      const response = await this.axios.post("/api/v1/settings/webhook", {
+        url: webhookUrl,
+        secret: secret,
+        isReporter: true, // Avisar para configurar a coluna reporter_url
+      });
+
+      if (response.data.success) {
+        this.log("✅ Webhook auto-configured successfully on BotGate");
+      }
+    } catch (error: any) {
+      this.log(
+        "❌ Auto-configuration failed",
+        error.response?.data || error.message,
+      );
+    }
+  }
+
+  /**
+   * Método útil para lidar com mensagens de Shards (IPC)
+   * Facilita a vida dos desenvolvedores que usam ShardingManager
+   */
+  public handleShardMessage(message: any): void {
+    if (message && message.type === "BOTGATE_VOTE") {
+      this.emit("vote", message.data);
+    }
   }
 
   /**
