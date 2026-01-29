@@ -204,6 +204,7 @@ export class BotGateReporter extends EventEmitter {
 
           webhookUrl = `https://${service}-${projectNumber}.${region}.run.app/webhook`;
           protocol = "https";
+
           this.log(
             `☁️ Detected Google Cloud Run environment (Project: ${projectNumber})`,
           );
@@ -211,6 +212,7 @@ export class BotGateReporter extends EventEmitter {
           this.log(
             "⚠️ Cloud Run detected but failed to get project ID from metadata server",
           );
+
           throw new Error("Failed to auto-configure Cloud Run webhook");
         }
       }
@@ -220,13 +222,16 @@ export class BotGateReporter extends EventEmitter {
         this.config.apiUrl?.includes("127.0.0.1")
       ) {
         webhookUrl = `http://localhost:${this.config.webhookPort}/webhook`;
+
         this.log(`🏠 Detected localhost environment`);
       }
       // CASO C: Outros ambientes (Railway, Heroku, VPS)
       else {
         const ipResponse = await axios.get("https://api.ipify.org?format=json");
         const publicIp = ipResponse.data.ip;
+
         webhookUrl = `http://${publicIp}:${this.config.webhookPort}/webhook`;
+
         this.log(`🌐 Detected public IP: ${publicIp}`);
       }
 
