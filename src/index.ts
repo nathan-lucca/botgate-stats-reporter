@@ -190,22 +190,22 @@ export class BotGateReporter extends EventEmitter {
         try {
           const service = process.env.K_SERVICE;
 
-          // Obter Project ID do Metadata Server (sempre disponível no Cloud Run)
+          // Obter Project NUMBER do Metadata Server (necessário para a URL do Cloud Run)
           const metadataResponse = await axios.get(
-            "http://metadata.google.internal/computeMetadata/v1/project/project-id",
+            "http://metadata.google.internal/computeMetadata/v1/project/numeric-project-id",
             {
               headers: { "Metadata-Flavor": "Google" },
               timeout: 2000,
             },
           );
 
-          const projectId = metadataResponse.data;
+          const projectNumber = metadataResponse.data;
           const region = process.env.GOOGLE_CLOUD_REGION || "us-central1";
 
-          webhookUrl = `https://${service}-${projectId}.${region}.run.app/webhook`;
+          webhookUrl = `https://${service}-${projectNumber}.${region}.run.app/webhook`;
           protocol = "https";
           this.log(
-            `☁️ Detected Google Cloud Run environment (Project: ${projectId})`,
+            `☁️ Detected Google Cloud Run environment (Project: ${projectNumber})`,
           );
         } catch (metadataError) {
           this.log(
