@@ -92,7 +92,7 @@ export class BotGateReporter extends EventEmitter {
   private webhookServer: Server | null = null;
   private isRunning: boolean = false;
   private failedAttempts: number = 0;
-  private currentTier: string = "free";
+  private currentTier: string = "";
 
   /**
    * Cria uma nova instância do BotGate Reporter
@@ -426,6 +426,11 @@ export class BotGateReporter extends EventEmitter {
       this.log("⭐ Shard Leader detected. Handling global reporting.");
       await this.verifyApiKey();
       await this.sendStats();
+
+      // Inicia o intervalo de postagem se ainda não estiver rodando
+      if (!this.statsIntervalId) {
+        this.setupAutoUpdate();
+      }
     } else {
       this.log(
         `ℹ️ Shard #${this.client?.shard?.ids[0]} initialized. Skipping reporting (Leader task).`,
