@@ -3,20 +3,54 @@ import axios, { AxiosInstance } from "axios";
 import EventEmitter from "events";
 import { createServer, Server } from "http";
 
-/**
- * ============================================================================
- * BotGate Stats Reporter
- * ============================================================================
- *
- * Pacote oficial do BotGate para reportar estatísticas do seu bot Discord
- * automaticamente para a plataforma BotGate.
- *
- * @package @botgate/stats-reporter
- * @version 1.1.0
- * @author BotGate Team
- * @license MIT
- * ============================================================================
- */
+const STRINGS = {
+  "pt-BR": {
+    initialized: "✅ BotGate Reporter inicializado",
+    webhook_listening: (port: number) => `📡 Servidor de webhook ouvindo na porta ${port}`,
+    starting_auto_config: "🔍 Iniciando auto-configuração...",
+    detected_gcr: (project: string) => `☁️ Ambiente Google Cloud Run detectado (Projeto: ${project})`,
+    failed_gcr_metadata: "⚠️ Cloud Run detectado, mas falha ao obter ID do projeto do servidor de metadata",
+    detected_localhost: "🏠 Ambiente localhost detectado",
+    detected_public_ip: (ip: string) => `🌐 IP público detectado: ${ip}`,
+    auto_config_webhook_url: (url: string) => `🌐 Auto-Config: URL do Webhook definida como ${url}`,
+    auto_config_success: "✅ Webhook auto-configurado com sucesso no BotGate",
+    auto_config_failed: "❌ Auto-configuração falhou",
+    collecting_shards: "📡 Coletando estatísticas de todos os shards via broadcastEval...",
+    reporter_started: "🚀 Reporter iniciado",
+    reporter_stopped: "🛑 Reporter parado",
+    api_key_verify_failed: "❌ Falha na verificação da API key",
+    bot_ready: (tag: string) => `🤖 Bot pronto: ${tag}`,
+    shard_leader_detected: "⭐ Shard Leader detectado. Lidando com reporte global.",
+    shard_initialized_skip: (id: number) => `ℹ️ Shard #${id} inicializado. Pulando reporte (Tarefa do Líder).`,
+    auto_stats_enabled: (min: number) => `⏰ Auto-stats ativado (cada ${min} min)`,
+    heartbeat_enabled: "💓 Business Heartbeat ativado (cada 5 min)",
+    plan_change_detected: (old: string, newPlan: string) => `🔄 Mudança de plano detectada: ${old} -> ${newPlan}`,
+    limit_reached: (status: number) => `⚠️ Limite de Tier/Frequência atingido (${status}). Sincronizando e aguardando próximo ciclo...`,
+  },
+  "en-US": {
+    initialized: "✅ BotGate Reporter initialized",
+    webhook_listening: (port: number) => `📡 Webhook server listening on port ${port}`,
+    starting_auto_config: "🔍 Starting auto-configuration...",
+    detected_gcr: (project: string) => `☁️ Detected Google Cloud Run environment (Project: ${project})`,
+    failed_gcr_metadata: "⚠️ Cloud Run detected but failed to get project ID from metadata server",
+    detected_localhost: "🏠 Detected localhost environment",
+    detected_public_ip: (ip: string) => `🌐 Detected public IP: ${ip}`,
+    auto_config_webhook_url: (url: string) => `🌐 Auto-Config: Webhook URL set to ${url}`,
+    auto_config_success: "✅ Webhook auto-configured successfully on BotGate",
+    auto_config_failed: "❌ Auto-configuration failed",
+    collecting_shards: "📡 Collecting stats from all shards via broadcastEval...",
+    reporter_started: "🚀 Reporter started",
+    reporter_stopped: "🛑 Reporter stopped",
+    api_key_verify_failed: "❌ API key verification failed",
+    bot_ready: (tag: string) => `🤖 Bot ready: ${tag}`,
+    shard_leader_detected: "⭐ Shard Leader detected. Handling global reporting.",
+    shard_initialized_skip: (id: number) => `ℹ️ Shard #${id} initialized. Skipping reporting (Leader task).`,
+    auto_stats_enabled: (min: number) => `⏰ Auto-stats enabled (${min} min)`,
+    heartbeat_enabled: "💓 Business Heartbeat enabled (every 5 min)",
+    plan_change_detected: (old: string, newPlan: string) => `🔄 Plan change detected: ${old} -> ${newPlan}`,
+    limit_reached: (status: number) => `⚠️ Tier/Frequency limit reached (${status}). Syncing and waiting for next cycle...`,
+  },
+};
 
 /**
  * Configuração do BotGate Reporter
@@ -42,6 +76,9 @@ export interface BotGateConfig {
 
   /** URL da API do BotGate (opcional, usado para testes) */
   apiUrl?: string;
+
+  /** Idioma das respostas e logs (opcional, padrão: "pt-BR", valores: "pt-BR" | "en-US") */
+  lang?: "pt-BR" | "en-US";
 }
 
 /**
@@ -57,6 +94,7 @@ interface InternalConfig {
   retryAttempts: number;
   retryDelay: number;
   webhookPort?: number;
+  lang: "pt-BR" | "en-US";
 }
 
 /**
@@ -103,19 +141,18 @@ export class BotGateReporter extends EventEmitter {
     super();
 
     if (!config.botId) throw new Error("[BotGate Reporter] botId is required");
-    if (!config.apiKey)
-      throw new Error("[BotGate Reporter] apiKey is required");
+    if (!config.apiKey) throw new Error("[BotGate Reporter] apiKey is required");
 
     this.config = {
       botId: config.botId,
       apiKey: config.apiKey,
-      apiUrl:
-        config.apiUrl || "https://botgate-api-987684559046.us-central1.run.app",
+      apiUrl: config.apiUrl || "https://botgate-api-987684559046.us-central1.run.app",
       updateInterval: 30 * 60 * 1000, // Padrão: 30 minutos (será atualizado via tier)
       debug: config.debug || false,
       retryAttempts: 3,
       retryDelay: 5000,
       webhookPort: config.webhookPort || 8080,
+      lang: config.lang || "pt-BR",
     };
 
     this.axios = axios.create({
@@ -136,7 +173,8 @@ export class BotGateReporter extends EventEmitter {
       this.setupAutoWebhook();
     }
 
-    this.log("✅ BotGate Reporter initialized", { botId: this.config.botId });
+    const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+    this.log(t.initialized, { botId: this.config.botId });
   }
 
   /**
@@ -148,11 +186,15 @@ export class BotGateReporter extends EventEmitter {
     this.webhookServer = createServer((req, res) => {
       if (req.method === "POST" && req.url === "/webhook") {
         let body = "";
+
         req.on("data", (chunk) => (body += chunk.toString()));
+
         req.on("end", () => {
           try {
             const data = JSON.parse(body);
+
             this.emit("vote", data.details || data);
+
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ success: true }));
           } catch (e) {
@@ -167,9 +209,9 @@ export class BotGateReporter extends EventEmitter {
     });
 
     this.webhookServer.listen(this.config.webhookPort, () => {
-      this.log(
-        `📡 Webhook server listening on port ${this.config.webhookPort}`,
-      );
+      const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+
+      this.log(t.webhook_listening(this.config.webhookPort as number));
     });
   }
 
@@ -177,8 +219,9 @@ export class BotGateReporter extends EventEmitter {
    * Configura automaticamente o webhook no painel do BotGate
    */
   public async setupAutoWebhook(): Promise<void> {
+    const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
     try {
-      this.log("🔍 Starting auto-configuration...");
+      this.log(t.starting_auto_config);
 
       let webhookUrl = "";
       let protocol = "http";
@@ -191,13 +234,10 @@ export class BotGateReporter extends EventEmitter {
           const service = process.env.K_SERVICE;
 
           // Obter Project NUMBER do Metadata Server (necessário para a URL do Cloud Run)
-          const metadataResponse = await axios.get(
-            "http://metadata.google.internal/computeMetadata/v1/project/numeric-project-id",
-            {
-              headers: { "Metadata-Flavor": "Google" },
-              timeout: 2000,
-            },
-          );
+          const metadataResponse = await axios.get("http://metadata.google.internal/computeMetadata/v1/project/numeric-project-id", {
+            headers: { "Metadata-Flavor": "Google" },
+            timeout: 2000,
+          });
 
           const projectNumber = metadataResponse.data;
           const region = process.env.GOOGLE_CLOUD_REGION || "us-central1";
@@ -205,25 +245,18 @@ export class BotGateReporter extends EventEmitter {
           webhookUrl = `https://${service}-${projectNumber}.${region}.run.app/webhook`;
           protocol = "https";
 
-          this.log(
-            `☁️ Detected Google Cloud Run environment (Project: ${projectNumber})`,
-          );
+          this.log(t.detected_gcr(projectNumber));
         } catch (metadataError) {
-          this.log(
-            "⚠️ Cloud Run detected but failed to get project ID from metadata server",
-          );
+          this.log(t.failed_gcr_metadata);
 
           throw new Error("Failed to auto-configure Cloud Run webhook");
         }
       }
       // CASO B: Localhost (Desenvolvimento)
-      else if (
-        this.config.apiUrl?.includes("localhost") ||
-        this.config.apiUrl?.includes("127.0.0.1")
-      ) {
+      else if (this.config.apiUrl?.includes("localhost") || this.config.apiUrl?.includes("127.0.0.1")) {
         webhookUrl = `http://localhost:${this.config.webhookPort}/webhook`;
 
-        this.log(`🏠 Detected localhost environment`);
+        this.log(t.detected_localhost);
       }
       // CASO C: Outros ambientes (Railway, Heroku, VPS)
       else {
@@ -232,12 +265,12 @@ export class BotGateReporter extends EventEmitter {
 
         webhookUrl = `http://${publicIp}:${this.config.webhookPort}/webhook`;
 
-        this.log(`🌐 Detected public IP: ${publicIp}`);
+        this.log(t.detected_public_ip(publicIp));
       }
 
       if (!webhookUrl) throw new Error("Could not determine webhook URL");
 
-      this.log(`🌐 Auto-Config: Webhook URL set to ${webhookUrl}`);
+      this.log(t.auto_config_webhook_url(webhookUrl));
 
       // 2. Gerar Secret Aleatório
       const secret = Math.random().toString(36).substring(2, 15);
@@ -250,13 +283,10 @@ export class BotGateReporter extends EventEmitter {
       });
 
       if (response.data.success) {
-        this.log("✅ Webhook auto-configured successfully on BotGate");
+        this.log(t.auto_config_success);
       }
     } catch (error: any) {
-      this.log(
-        "❌ Auto-configuration failed",
-        error.response?.data || error.message,
-      );
+      this.log(t.auto_config_failed, error.response?.data || error.message);
     }
   }
 
@@ -287,7 +317,8 @@ export class BotGateReporter extends EventEmitter {
       client.once("ready", () => this.onReady());
     }
 
-    this.log("🚀 Reporter started");
+    const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+    this.log(t.reporter_started);
   }
 
   /**
@@ -301,7 +332,9 @@ export class BotGateReporter extends EventEmitter {
     this.heartbeatIntervalId = null;
     this.isRunning = false;
 
-    this.log("🛑 Reporter stopped");
+    const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+
+    this.log(t.reporter_stopped);
   }
 
   /**
@@ -314,14 +347,19 @@ export class BotGateReporter extends EventEmitter {
 
     const stats = await this.collectStats();
 
-    return await this.postWithRetry("/api/v1/bots/stats", stats);
+    return await this.postWithRetry("/api/v1/bots/stats", {
+      ...stats,
+      lang: this.config.lang,
+    });
   }
 
   /**
    * Envia sinal de vida (Heartbeat) - Apenas Business
    */
   public async sendHeartbeat(): Promise<BotGateResponse> {
-    return await this.postWithRetry("/api/v1/heartbeat", {});
+    return await this.postWithRetry("/api/v1/heartbeat", {
+      lang: this.config.lang,
+    });
   }
 
   /**
@@ -329,7 +367,9 @@ export class BotGateReporter extends EventEmitter {
    */
   public async verifyApiKey(): Promise<boolean> {
     try {
-      const response = await this.axios.get("/api/v1/verify");
+      const response = await this.axios.get("/api/v1/verify", {
+        params: { lang: this.config.lang },
+      });
 
       if (response.data.success && response.data.data?.tier) {
         this.syncFromResponse(response.data.data);
@@ -337,7 +377,9 @@ export class BotGateReporter extends EventEmitter {
 
       return response.data.success === true;
     } catch (error) {
-      this.log("❌ API key verification failed", this.formatError(error));
+      const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+
+      this.log(t.api_key_verify_failed, this.formatError(error));
 
       return false;
     }
@@ -346,10 +388,10 @@ export class BotGateReporter extends EventEmitter {
   /**
    * Busca informações completas do bot
    */
-  public async getBotInfo(
-    botId: string = this.config.botId,
-  ): Promise<BotGateResponse> {
-    const response = await this.axios.get(`/api/v1/bots/${botId}`);
+  public async getBotInfo(botId: string = this.config.botId): Promise<BotGateResponse> {
+    const response = await this.axios.get(`/api/v1/bots/${botId}`, {
+      params: { lang: this.config.lang },
+    });
 
     if (response.data.success) {
       this.syncFromResponse(response.data.data);
@@ -361,12 +403,9 @@ export class BotGateReporter extends EventEmitter {
   /**
    * Busca detalhes de votos do bot
    */
-  public async getBotVotes(
-    botId: string = this.config.botId,
-    limit: number = 10,
-  ): Promise<BotGateResponse> {
+  public async getBotVotes(botId: string = this.config.botId, limit: number = 10): Promise<BotGateResponse> {
     const response = await this.axios.get(`/api/v1/bots/${botId}/votes`, {
-      params: { limit },
+      params: { limit, lang: this.config.lang },
     });
 
     return response.data;
@@ -375,10 +414,10 @@ export class BotGateReporter extends EventEmitter {
   /**
    * Busca métricas e analytics (Requer plano compatível)
    */
-  public async getBotAnalytics(
-    botId: string = this.config.botId,
-  ): Promise<BotGateResponse> {
-    const response = await this.axios.get(`/api/v1/bots/${botId}/analytics`);
+  public async getBotAnalytics(botId: string = this.config.botId): Promise<BotGateResponse> {
+    const response = await this.axios.get(`/api/v1/bots/${botId}/analytics`, {
+      params: { lang: this.config.lang },
+    });
 
     return response.data;
   }
@@ -386,14 +425,8 @@ export class BotGateReporter extends EventEmitter {
   /**
    * Busca histórico de crescimento (Para gráficos)
    */
-  public async getStatsHistory(
-    botId: string = this.config.botId,
-    period: "daily" | "weekly" | "monthly" | "all" = "all",
-  ): Promise<BotGateResponse> {
-    const response = await this.axios.get(
-      `/api/v1/bots/${botId}/stats/history`,
-      { params: { period } },
-    );
+  public async getStatsHistory(botId: string = this.config.botId, period: "daily" | "weekly" | "monthly" | "all" = "all"): Promise<BotGateResponse> {
+    const response = await this.axios.get(`/api/v1/bots/${botId}/stats/history`, { params: { period, lang: this.config.lang } });
 
     return response.data;
   }
@@ -402,7 +435,9 @@ export class BotGateReporter extends EventEmitter {
    * Busca informações de uso da API (limites e consumo)
    */
   public async getApiUsage(): Promise<BotGateResponse> {
-    const response = await this.axios.get("/api/v1/usage");
+    const response = await this.axios.get("/api/v1/usage", {
+      params: { lang: this.config.lang },
+    });
 
     if (response.data.success) {
       this.syncFromResponse(response.data.data);
@@ -416,14 +451,17 @@ export class BotGateReporter extends EventEmitter {
    */
 
   private async onReady(): Promise<void> {
-    this.log(`🤖 Bot ready: ${this.client?.user?.tag}`);
+    const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+
+    this.log(t.bot_ready(this.client?.user?.tag as string));
 
     // Apenas o Shard 0 (líder) ou bot sem shards inicia o loop de postagem
     // Isso evita que cada shard envie requisições duplicadas para a API
     const isLeader = !this.client?.shard || this.client.shard.ids[0] === 0;
 
     if (isLeader) {
-      this.log("⭐ Shard Leader detected. Handling global reporting.");
+      this.log(t.shard_leader_detected);
+
       await this.verifyApiKey();
       await this.sendStats();
 
@@ -432,23 +470,18 @@ export class BotGateReporter extends EventEmitter {
         this.setupAutoUpdate();
       }
     } else {
-      this.log(
-        `ℹ️ Shard #${this.client?.shard?.ids[0]} initialized. Skipping reporting (Leader task).`,
-      );
+      this.log(t.shard_initialized_skip(this.client?.shard?.ids[0] || 0));
     }
   }
 
   private setupAutoUpdate(): void {
     if (this.statsIntervalId) clearInterval(this.statsIntervalId);
 
-    this.statsIntervalId = setInterval(
-      () => this.sendStats(),
-      this.config.updateInterval,
-    );
+    this.statsIntervalId = setInterval(() => this.sendStats(), this.config.updateInterval);
 
-    this.log(
-      `⏰ Auto-stats enabled (${this.config.updateInterval / 60000} min)`,
-    );
+    const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+
+    this.log(t.auto_stats_enabled(this.config.updateInterval / 60000));
   }
 
   private manageHeartbeat(): void {
@@ -457,12 +490,11 @@ export class BotGateReporter extends EventEmitter {
 
       this.sendHeartbeat(); // Primeiro envio imediato
 
-      this.heartbeatIntervalId = setInterval(
-        () => this.sendHeartbeat(),
-        5 * 60 * 1000,
-      ); // A cada 5 min
+      this.heartbeatIntervalId = setInterval(() => this.sendHeartbeat(), 5 * 60 * 1000); // A cada 5 min
 
-      this.log("💓 Business Heartbeat enabled (every 5 min)");
+      const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+
+      this.log(t.heartbeat_enabled);
     } else if (this.heartbeatIntervalId) {
       clearInterval(this.heartbeatIntervalId);
 
@@ -473,6 +505,8 @@ export class BotGateReporter extends EventEmitter {
   private async collectStats(): Promise<BotStats> {
     if (!this.client) throw new Error("Client not initialized");
 
+    const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+
     // Caso NÃO tenha shards, faz a coleta local normal
     if (!this.client.shard) {
       const guilds = this.client.guilds.cache;
@@ -480,41 +514,34 @@ export class BotGateReporter extends EventEmitter {
       return {
         botId: this.config.botId,
         serverCount: guilds.size,
-        userCount: guilds.reduce((acc, g) => acc + (g.memberCount || 0), 0),
+        userCount: guilds.reduce((acc: number, g: any) => acc + (g.memberCount || 0), 0),
         shardCount: 1,
         timestamp: Date.now(),
       };
     }
 
     // Caso TENHA shards, solicita que todos os shards enviem seus dados e soma
-    this.log("📡 Collecting stats from all shards via broadcastEval...");
+    this.log(t.collecting_shards);
     const results = (await this.client.shard.broadcastEval((c: any) => {
       return {
         guilds: c.guilds.cache.size,
-        users: c.guilds.cache.reduce(
-          (acc: number, g: any) => acc + (g.memberCount || 0),
-          0,
-        ),
+        users: c.guilds.cache.reduce((acc: number, g: any) => acc + (g.memberCount || 0), 0),
       };
     })) as Array<{ guilds: number; users: number }>;
 
-    const totalGuilds = results.reduce((acc, res) => acc + res.guilds, 0);
-    const totalUsers = results.reduce((acc, res) => acc + res.users, 0);
+    const totalGuilds = results.reduce((acc: number, res: any) => acc + res.guilds, 0);
+    const totalUsers = results.reduce((acc: number, res: any) => acc + res.users, 0);
 
     return {
       botId: this.config.botId,
       serverCount: totalGuilds,
       userCount: totalUsers,
-      shardCount: this.client.shard.count,
+      shardCount: (this.client.shard as any).count,
       timestamp: Date.now(),
     };
   }
 
-  private async postWithRetry(
-    url: string,
-    data: any,
-    attempt: number = 1,
-  ): Promise<BotGateResponse> {
+  private async postWithRetry(url: string, data: any, attempt: number = 1): Promise<BotGateResponse> {
     try {
       const response = await this.axios.post(url, data);
       const responseData = response.data;
@@ -532,9 +559,10 @@ export class BotGateReporter extends EventEmitter {
 
       // Se o erro for 403 (Upgrade/Tier) ou 429 (Frequência)
       if (status === 403 || status === 429) {
-        this.log(
-          `⚠️ Tier/Frequency limit reached (${status}). Syncing and waiting for next cycle...`,
-        );
+        const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+
+        this.log(t.limit_reached(status as number));
+
         await this.verifyApiKey();
 
         // NÃO tentar novamente (retry) agora, pois vai falhar de novo.
@@ -564,13 +592,12 @@ export class BotGateReporter extends EventEmitter {
     const tierObject = data.tier || data;
     const tierName = tierObject.name || tierObject.tier || data.tier;
 
-    const intervalMinutes =
-      tierObject.updateIntervalMinutes ||
-      data.updates?.updateIntervalMinutes ||
-      data.capabilities?.updateIntervalMinutes;
+    const intervalMinutes = tierObject.updateIntervalMinutes || data.updates?.updateIntervalMinutes || data.capabilities?.updateIntervalMinutes;
 
     if (tierName && tierName !== this.currentTier) {
-      this.log(`🔄 Plan change detected: ${this.currentTier} -> ${tierName}`);
+      const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+
+      this.log(t.plan_change_detected(this.currentTier, tierName));
       this.currentTier = tierName;
 
       if (intervalMinutes) {
@@ -584,9 +611,7 @@ export class BotGateReporter extends EventEmitter {
   }
 
   private updateIntervalFromTier(tierData: any): void {
-    const minutes = parseInt(
-      tierData.updateInterval?.replace(" minutes", "") || "30",
-    );
+    const minutes = parseInt(tierData.updateInterval?.replace(" minutes", "") || "30");
     const newInterval = minutes * 60 * 1000;
 
     if (this.config.updateInterval !== newInterval) {
@@ -601,9 +626,7 @@ export class BotGateReporter extends EventEmitter {
 
   private log(message: string, data?: any): void {
     if (this.config.debug) {
-      console.log(
-        `[BotGate Reporter] [${new Date().toISOString()}] ${message}`,
-      );
+      console.log(`[BotGate Reporter] [${new Date().toISOString()}] ${message}`);
 
       if (data) console.log(JSON.stringify(data, null, 2));
     }
