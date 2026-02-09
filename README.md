@@ -26,8 +26,9 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const reporter = new BotGateReporter({
   botId: "SEU_BOT_ID",
   apiKey: "SUA_API_KEY",
-  enableWebhooks: true, // Ativa o servidor para receber votos
-  autoConfig: true, // Configura automaticamente o IP técnico no BotGate
+  enableWebhooks: true, // Ativa o servidor interno para receber eventos (votos)
+  lang: "pt-BR", // Opcional: "pt-BR" (padrão) ou "en-US"
+  debug: true, // Opcional: true para logs detalhados, false para logs normais
 });
 
 // Evento disparado sempre que alguém votar no seu bot
@@ -42,6 +43,18 @@ client.once("ready", () => {
 
 client.login("SEU_TOKEN_DISCORD");
 ```
+
+### ⚙️ Configuração
+
+O construtor `BotGateReporter` aceita as seguintes opções:
+
+| Propriedade      | Tipo      | Padrão          | Descrição                                                       |
+| :--------------- | :-------- | :-------------- | :-------------------------------------------------------------- |
+| `botId`          | `string`  | **Obrigatório** | O ID do seu bot no Discord.                                     |
+| `apiKey`         | `string`  | **Obrigatório** | Sua API Key obtida no painel do BotGate.                        |
+| `enableWebhooks` | `boolean` | `false`         | Ativa o servidor HTTP interno para receber votos em tempo real. |
+| `lang`           | `string`  | `"pt-BR"`       | Idioma dos logs e respostas da API (`pt-BR` ou `en-US`).        |
+| `debug`          | `boolean` | `false`         | Ativa logs detalhados no console para depuração.                |
 
 ---
 
@@ -70,10 +83,11 @@ Repasse as mensagens de voto para os shards. O sistema do BotGate enviará os da
 
 ```javascript
 const reporter = new BotGateReporter({
-  botId: "ID",
-  apiKey: "KEY",
-  autoConfig: true, // Para registrar seu IP técnico
-  enableWebhooks: false, // Desativado pois o manager recebe o hit
+  botId: "BOT_ID",
+  apiKey: "API_KEY",
+  enableWebhooks: false, // Ativa o servidor interno para receber eventos (votos). OBS.: No sharding, é recomendado desativar o webhook no shard e ativar no manager.
+  lang: "pt-BR",
+  debug: true, // Opcional: true para logs detalhados, false para logs normais
 });
 
 // Escuta a ponte IPC entre os processos

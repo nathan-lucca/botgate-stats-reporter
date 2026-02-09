@@ -169,7 +169,7 @@ export class BotGateReporter extends EventEmitter {
       this.initWebhookServer();
     }
 
-    if (config.autoConfig) {
+    if (config.autoConfig !== false) {
       this.setupAutoWebhook();
     }
 
