@@ -586,6 +586,20 @@ export class BotGateReporter extends EventEmitter {
   private syncFromResponse(data: any): void {
     if (!data) return;
 
+    // Sincronizar ID do Bot (Integridade)
+    // Se o servidor retornar um botId (que é o real vinculado à API Key)
+    // e ele for diferente do configurado, nós corrigimos localmente.
+    if (data.botId && data.botId !== this.config.botId) {
+      if (this.config.debug) {
+        console.warn(`[BotGate Reporter] Config mismatch! Local ID: ${this.config.botId} | API ID: ${data.botId}. Syncing to API ID.`);
+      }
+
+      this.config.botId = data.botId;
+
+      // Atualizar o User-Agent nas requisições futuras
+      this.axios.defaults.headers["User-Agent"] = `BotGate-Stats-Reporter/1.2.0 (Bot: ${this.config.botId})`;
+    }
+
     // Tenta extrair o tier e o intervalo de diferentes formatos de resposta da API
     // Se for a resposta de /bots/stats, o tier vem dentro de data.tier
     // Se for a resposta de /usage, o tier vem direto em data.tier.name
