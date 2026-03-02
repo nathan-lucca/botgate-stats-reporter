@@ -26,6 +26,14 @@ const STRINGS = {
     heartbeat_enabled: "💓 Business Heartbeat ativado (cada 5 min)",
     plan_change_detected: (old: string, newPlan: string) => `🔄 Mudança de plano detectada: ${old} -> ${newPlan}`,
     limit_reached: (status: number) => `⚠️ Limite de Tier/Frequência atingido (${status}). Sincronizando e aguardando próximo ciclo...`,
+    config_mismatch: (local: string, remote: string) => `⚠️ Divergência de ID! Local: ${local} | API: ${remote}. Sincronizando com o ID da API.`,
+    error_bot_id: "O botId é obrigatório para o Reporter",
+    error_api_key: "A apiKey é obrigatória para o Reporter",
+    error_gcr_webhook: "Falha ao auto-configurar o webhook no Cloud Run",
+    error_webhook_url: "Não foi possível determinar a URL do webhook",
+    error_client_ready: "O cliente do Discord não está pronto",
+    error_client_init: "O cliente do Discord não foi inicializado",
+    error_rate_limit: (status: number) => `Limite atingido ou incompatibilidade de tier (${status})`,
   },
   "en-US": {
     initialized: "✅ BotGate Reporter initialized",
@@ -49,6 +57,14 @@ const STRINGS = {
     heartbeat_enabled: "💓 Business Heartbeat enabled (every 5 min)",
     plan_change_detected: (old: string, newPlan: string) => `🔄 Plan change detected: ${old} -> ${newPlan}`,
     limit_reached: (status: number) => `⚠️ Tier/Frequency limit reached (${status}). Syncing and waiting for next cycle...`,
+    config_mismatch: (local: string, remote: string) => `⚠️ Config mismatch! Local ID: ${local} | API ID: ${remote}. Syncing to API ID.`,
+    error_bot_id: "botId is required for the Reporter",
+    error_api_key: "apiKey is required for the Reporter",
+    error_gcr_webhook: "Failed to auto-configure Cloud Run webhook",
+    error_webhook_url: "Could not determine webhook URL",
+    error_client_ready: "Discord client is not ready",
+    error_client_init: "Discord client not initialized",
+    error_rate_limit: (status: number) => `Rate limited or tier mismatch (${status})`,
   },
 };
 
@@ -140,8 +156,11 @@ export class BotGateReporter extends EventEmitter {
   constructor(config: BotGateConfig) {
     super();
 
-    if (!config.botId) throw new Error("[BotGate Reporter] botId is required");
-    if (!config.apiKey) throw new Error("[BotGate Reporter] apiKey is required");
+    const lang = config.lang || "pt-BR";
+    const t_init = STRINGS[lang] || STRINGS["pt-BR"];
+
+    if (!config.botId) throw new Error(`[BotGate Reporter] ${t_init.error_bot_id}`);
+    if (!config.apiKey) throw new Error(`[BotGate Reporter] ${t_init.error_api_key}`);
 
     this.config = {
       botId: config.botId,
@@ -249,7 +268,7 @@ export class BotGateReporter extends EventEmitter {
         } catch (metadataError) {
           this.log(t.failed_gcr_metadata);
 
-          throw new Error("Failed to auto-configure Cloud Run webhook");
+          throw new Error(t.error_gcr_webhook);
         }
       }
       // CASO B: Localhost (Desenvolvimento)
@@ -268,7 +287,7 @@ export class BotGateReporter extends EventEmitter {
         this.log(t.detected_public_ip(publicIp));
       }
 
-      if (!webhookUrl) throw new Error("Could not determine webhook URL");
+      if (!webhookUrl) throw new Error(t.error_webhook_url);
 
       this.log(t.auto_config_webhook_url(webhookUrl));
 
@@ -342,7 +361,8 @@ export class BotGateReporter extends EventEmitter {
    */
   public async sendStats(): Promise<BotGateResponse> {
     if (!this.client?.isReady()) {
-      throw new Error("[BotGate Reporter] Discord client is not ready");
+      const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+      throw new Error(`[BotGate Reporter] ${t.error_client_ready}`);
     }
 
     const stats = await this.collectStats();
@@ -503,7 +523,10 @@ export class BotGateReporter extends EventEmitter {
   }
 
   private async collectStats(): Promise<BotStats> {
-    if (!this.client) throw new Error("Client not initialized");
+    if (!this.client) {
+      const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+      throw new Error(t.error_client_init);
+    }
 
     const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
 
@@ -569,7 +592,7 @@ export class BotGateReporter extends EventEmitter {
         // Esperamos o próximo intervalo agendado.
         return {
           success: false,
-          error: `Rate limited or tier mismatch (${status})`,
+          error: t.error_rate_limit(status as number),
         };
       }
 
@@ -591,7 +614,8 @@ export class BotGateReporter extends EventEmitter {
     // e ele for diferente do configurado, nós corrigimos localmente.
     if (data.botId && data.botId !== this.config.botId) {
       if (this.config.debug) {
-        console.warn(`[BotGate Reporter] Config mismatch! Local ID: ${this.config.botId} | API ID: ${data.botId}. Syncing to API ID.`);
+        const t = STRINGS[this.config.lang] || STRINGS["pt-BR"];
+        this.log(t.config_mismatch(this.config.botId, data.botId));
       }
 
       this.config.botId = data.botId;
@@ -615,18 +639,16 @@ export class BotGateReporter extends EventEmitter {
       this.currentTier = tierName;
 
       if (intervalMinutes) {
-        this.updateIntervalFromTier({
-          updateInterval: `${intervalMinutes} minutes`,
-        });
+        this.updateIntervalFromTier(intervalMinutes);
       }
 
       this.manageHeartbeat();
     }
   }
 
-  private updateIntervalFromTier(tierData: any): void {
-    const minutes = parseInt(tierData.updateInterval?.replace(" minutes", "") || "30");
-    const newInterval = minutes * 60 * 1000;
+  private updateIntervalFromTier(minutesData: any): void {
+    const minutes = typeof minutesData === "number" ? minutesData : parseInt(String(minutesData));
+    const newInterval = (isNaN(minutes) ? 30 : minutes) * 60 * 1000;
 
     if (this.config.updateInterval !== newInterval) {
       this.config.updateInterval = newInterval;
