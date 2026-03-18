@@ -37,7 +37,7 @@
   "bugs": {
     "url": "https://github.com/nathan-lucca/botgate-stats-reporter/issues"
   },
-  "homepage": "http://docs-botgate.vercel.app/",
+  "homepage": "https://docs.botgate.com.br/",
   "peerDependencies": {
     "discord.js": "^14.0.0"
   },
