@@ -165,7 +165,7 @@ export class BotGateReporter extends EventEmitter {
     this.config = {
       botId: config.botId,
       apiKey: config.apiKey,
-      apiUrl: config.apiUrl || "https://api.botgate.coden8n.shop",
+      apiUrl: config.apiUrl || "https://api-bot.botgate.com.br",
       updateInterval: 30 * 60 * 1000, // Padrão: 30 minutos (será atualizado via tier)
       debug: config.debug || false,
       retryAttempts: 3,

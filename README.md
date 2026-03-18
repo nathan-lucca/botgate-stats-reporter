@@ -109,7 +109,7 @@ O `@botgate/botgate-stats-reporter` é reativo. Se você fizer um upgrade de pla
 ## 🔗 Links Úteis
 
 - [Documentação Oficial](https://docs-botgate.vercel.app/)
-- [Painel do Desenvolvedor](https://botgate-site.vercel.app/settings)
+- [Painel do Desenvolvedor](https://www.botgate.com.br/settings)
 - [Suporte no Discord](https://www.discord.gg/xK4r9HqKKf)
 
 ## 📄 Licença
